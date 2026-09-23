@@ -1,13 +1,28 @@
 import { differenceInCalendarDays, parseISO } from 'date-fns'
 import type { Ad, AdMetrics, Client, DailyEntry, FlagLevel, Recommendation } from './types'
 
-export function daysActive(ad: Ad, today = new Date()): number {
+/**
+ * Days active = from the ad's true earliest data date, up to whichever
+ * comes first: the day it was manually closed/stopped (frozen — it doesn't
+ * keep counting after that), or the given "as of" date (defaults to today,
+ * but the dashboard's date-range picker can pass an earlier date to view
+ * the account as of a past point in time).
+ */
+export function daysActive(ad: Ad, asOf = new Date()): number {
   const start = parseISO(ad.first_active_date)
-  return Math.max(0, differenceInCalendarDays(today, start) + 1)
+  const end = ad.closed_date ? parseISO(ad.closed_date) : asOf
+  const cutoff = end < asOf ? end : asOf
+  return Math.max(0, differenceInCalendarDays(cutoff, start) + 1)
 }
 
 export function sum(entries: DailyEntry[], key: keyof DailyEntry): number {
   return entries.reduce((acc, e) => acc + (Number(e[key]) || 0), 0)
+}
+
+/** Keeps only entries whose date falls within [start, end] (inclusive). Either bound may be omitted. */
+export function filterEntriesByRange(entries: DailyEntry[], start: string | null, end: string | null): DailyEntry[] {
+  if (!start && !end) return entries
+  return entries.filter((e) => (!start || e.date >= start) && (!end || e.date <= end))
 }
 
 /** CPL trend from the last 5 entries with spend > 0, oldest to newest. */
@@ -71,8 +86,9 @@ export function recommend(params: {
   entries: DailyEntry[]
   client: Client
   bestCplInAccount: number | null
+  asOf?: Date
 }): Recommendation {
-  const { ad, entries, client } = params
+  const { ad, entries, client, asOf } = params
   const spend = sum(entries, 'spend')
   const results = sum(entries, 'results')
   const cpl = results > 0 ? spend / results : null
@@ -80,10 +96,16 @@ export function recommend(params: {
     entries.filter((e) => e.frequency != null).length > 0
       ? sum(entries, 'frequency') / entries.filter((e) => e.frequency != null).length
       : null
-  const active = daysActive(ad)
+  const active = daysActive(ad, asOf)
   const trend = cplTrend(entries)
 
   if (ad.status !== 'active') {
+    if (ad.closed_date) {
+      return {
+        action: 'monitor',
+        reason: `Closed on ${ad.closed_date}${ad.close_reason ? ` — ${ad.close_reason}` : '.'}`,
+      }
+    }
     return { action: 'monitor', reason: `Ad is currently ${ad.status}.` }
   }
 
@@ -133,8 +155,9 @@ export function buildAdMetrics(params: {
   entries: DailyEntry[]
   client: Client
   bestCplInAccount: number | null
+  asOf?: Date
 }): AdMetrics {
-  const { ad, entries, client, bestCplInAccount } = params
+  const { ad, entries, client, bestCplInAccount, asOf } = params
   const totalSpend = sum(entries, 'spend')
   const totalResults = sum(entries, 'results')
   const totalClicks = sum(entries, 'clicks')
@@ -150,7 +173,7 @@ export function buildAdMetrics(params: {
   return {
     ad,
     entries,
-    daysActive: daysActive(ad),
+    daysActive: daysActive(ad, asOf),
     totalSpend,
     totalResults,
     cpl,
@@ -159,6 +182,6 @@ export function buildAdMetrics(params: {
     lpConvRate,
     cplTrend: cplTrend(entries),
     flag: flagForCpl(cpl, client),
-    recommendation: recommend({ ad, entries, client, bestCplInAccount }),
+    recommendation: recommend({ ad, entries, client, bestCplInAccount, asOf }),
   }
 }

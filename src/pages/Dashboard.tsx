@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import type { Ad, AdMetrics, AdSet, Campaign, Client, DailyEntry } from '../lib/types'
 import { listAllAdsForClient, listAllEntriesForAds, updateAdSetNotes } from '../lib/store'
-import { buildAdMetrics, mergeEntriesByDate } from '../lib/metrics'
+import { buildAdMetrics, filterEntriesByRange, mergeEntriesByDate } from '../lib/metrics'
 import { CplBadge, ActionBadge } from '../components/StatusBadge'
 import { AdDetailPanel } from '../components/AdDetailPanel'
 import { RecommendationsPanel } from '../components/RecommendationsPanel'
 import { CplSparkline } from '../components/Sparkline'
 import { NotesField } from '../components/NotesField'
+import { DateRangeBar, type DateRange } from '../components/DateRangeBar'
 
 export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: number }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -19,6 +20,7 @@ export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: 
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
   const [expandedAdSetId, setExpandedAdSetId] = useState<string | null>(null)
   const [selectedAdId, setSelectedAdId] = useState<string | null>(null)
+  const [range, setRange] = useState<DateRange>({ start: null, end: null })
 
   async function load() {
     setLoading(true)
@@ -40,9 +42,23 @@ export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client.id, refreshKey])
 
+  // "As of" for day-count purposes: the end of the selected range, or real
+  // today when no range/end is chosen. A closed ad's own closed_date always
+  // wins over this (handled inside daysActive/recommend).
+  const asOf = useMemo(() => (range.end ? new Date(`${range.end}T12:00:00`) : new Date()), [range.end])
+
+  const filteredEntriesByAd = useMemo(() => {
+    if (!range.start && !range.end) return entriesByAd
+    const result: Record<string, DailyEntry[]> = {}
+    for (const [adId, entries] of Object.entries(entriesByAd)) {
+      result[adId] = filterEntriesByRange(entries, range.start, range.end)
+    }
+    return result
+  }, [entriesByAd, range])
+
   const allAdMetrics: AdMetrics[] = useMemo(() => {
     const spendByAd = ads.map((ad) => {
-      const entries = entriesByAd[ad.id] ?? []
+      const entries = filteredEntriesByAd[ad.id] ?? []
       const spend = entries.reduce((s, e) => s + e.spend, 0)
       const results = entries.reduce((s, e) => s + e.results, 0)
       return { ad, cpl: results > 0 ? spend / results : null }
@@ -51,9 +67,9 @@ export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: 
     const bestCpl = validCpls.length > 0 ? Math.min(...validCpls) : null
 
     return ads.map((ad) =>
-      buildAdMetrics({ ad, entries: entriesByAd[ad.id] ?? [], client, bestCplInAccount: bestCpl }),
+      buildAdMetrics({ ad, entries: filteredEntriesByAd[ad.id] ?? [], client, bestCplInAccount: bestCpl, asOf }),
     )
-  }, [ads, entriesByAd, client])
+  }, [ads, filteredEntriesByAd, client, asOf])
 
   const metricsByAdId = useMemo(() => new Map(allAdMetrics.map((m) => [m.ad.id, m])), [allAdMetrics])
 
@@ -90,6 +106,9 @@ export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: 
 
   return (
     <div className="flex flex-col h-full">
+      {/* Custom calendar / date range filter */}
+      <DateRangeBar range={range} onChange={setRange} />
+
       {/* Account summary strip */}
       <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0 overflow-x-auto">
         <SummaryTile label="Active ads" value={String(accountTotals.activeCount)} />

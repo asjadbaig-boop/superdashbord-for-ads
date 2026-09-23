@@ -33,6 +33,8 @@ export interface Ad {
   first_active_date: string // YYYY-MM-DD, used for "days active" — earliest date seen across all imports
   status: 'active' | 'paused' | 'killed'
   notes: string | null // free text — what this creative/ad is about
+  closed_date: string | null // YYYY-MM-DD — set when manually closed/stopped; freezes "days active"
+  close_reason: string | null // why it was closed, captured when closed_date is set
   created_at: string
 }
 

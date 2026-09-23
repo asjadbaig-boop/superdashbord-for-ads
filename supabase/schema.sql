@@ -36,6 +36,8 @@ create table if not exists ads (
   first_active_date date not null default current_date,
   status text not null default 'active' check (status in ('active','paused','killed')),
   notes text,
+  closed_date date, -- set when manually closed/stopped; freezes "days active"
+  close_reason text, -- why it was closed, captured when closed_date is set
   created_at timestamptz not null default now()
 );
 
@@ -78,3 +80,9 @@ create policy "anon full access" on daily_entries for all using (true) with chec
 -- statements above won't touch existing tables.
 alter table ad_sets add column if not exists notes text;
 alter table ads add column if not exists notes text;
+
+-- Migration (2026-09-23): added `closed_date`/`close_reason` to ads for
+-- manually closing/stopping an ad (freezes "days active" as of that date).
+-- Run this against your live Supabase project's SQL editor.
+alter table ads add column if not exists closed_date date;
+alter table ads add column if not exists close_reason text;

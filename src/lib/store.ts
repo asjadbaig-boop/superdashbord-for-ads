@@ -183,7 +183,7 @@ export async function createAd(input: {
     return data as Ad
   }
   const db = loadLocal()
-  const ad: Ad = { id: uid(), created_at: nowIso(), status: 'active', notes: null, ...input }
+  const ad: Ad = { id: uid(), created_at: nowIso(), status: 'active', notes: null, closed_date: null, close_reason: null, ...input }
   db.ads.push(ad)
   saveLocal(db)
   return ad
@@ -197,6 +197,32 @@ export async function setAdStatus(id: string, status: Ad['status']): Promise<voi
   }
   const db = loadLocal()
   db.ads = db.ads.map((a) => (a.id === id ? { ...a, status } : a))
+  saveLocal(db)
+}
+
+/** Manually stop/close an ad: freezes its "days active" as of closedDate and records why. */
+export async function closeAd(id: string, closedDate: string, reason: string): Promise<void> {
+  const patch = { status: 'killed' as const, closed_date: closedDate, close_reason: reason }
+  if (supabaseConfigured && supabase) {
+    const { error } = await supabase.from('ads').update(patch).eq('id', id)
+    if (error) throw error
+    return
+  }
+  const db = loadLocal()
+  db.ads = db.ads.map((a) => (a.id === id ? { ...a, ...patch } : a))
+  saveLocal(db)
+}
+
+/** Reopens a manually-closed ad: back to active, clears closed_date/close_reason. */
+export async function reopenAd(id: string): Promise<void> {
+  const patch = { status: 'active' as const, closed_date: null, close_reason: null }
+  if (supabaseConfigured && supabase) {
+    const { error } = await supabase.from('ads').update(patch).eq('id', id)
+    if (error) throw error
+    return
+  }
+  const db = loadLocal()
+  db.ads = db.ads.map((a) => (a.id === id ? { ...a, ...patch } : a))
   saveLocal(db)
 }
 
