@@ -130,10 +130,21 @@ export async function createAdSet(input: { campaign_id: string; name: string; da
     return data as AdSet
   }
   const db = loadLocal()
-  const adSet: AdSet = { id: uid(), created_at: nowIso(), daily_budget: null, ...input }
+  const adSet: AdSet = { id: uid(), created_at: nowIso(), daily_budget: null, notes: null, ...input }
   db.adSets.push(adSet)
   saveLocal(db)
   return adSet
+}
+
+export async function updateAdSetNotes(id: string, notes: string): Promise<void> {
+  if (supabaseConfigured && supabase) {
+    const { error } = await supabase.from('ad_sets').update({ notes }).eq('id', id)
+    if (error) throw error
+    return
+  }
+  const db = loadLocal()
+  db.adSets = db.adSets.map((s) => (s.id === id ? { ...s, notes } : s))
+  saveLocal(db)
 }
 
 // ---------- Ads ----------
@@ -172,7 +183,7 @@ export async function createAd(input: {
     return data as Ad
   }
   const db = loadLocal()
-  const ad: Ad = { id: uid(), created_at: nowIso(), status: 'active', ...input }
+  const ad: Ad = { id: uid(), created_at: nowIso(), status: 'active', notes: null, ...input }
   db.ads.push(ad)
   saveLocal(db)
   return ad
@@ -186,6 +197,18 @@ export async function setAdStatus(id: string, status: Ad['status']): Promise<voi
   }
   const db = loadLocal()
   db.ads = db.ads.map((a) => (a.id === id ? { ...a, status } : a))
+  saveLocal(db)
+}
+
+/** Patch an ad's first_active_date (backfilled by an earlier import) and/or notes. */
+export async function updateAdFields(id: string, patch: Partial<Pick<Ad, 'first_active_date' | 'notes'>>): Promise<void> {
+  if (supabaseConfigured && supabase) {
+    const { error } = await supabase.from('ads').update(patch).eq('id', id)
+    if (error) throw error
+    return
+  }
+  const db = loadLocal()
+  db.ads = db.ads.map((a) => (a.id === id ? { ...a, ...patch } : a))
   saveLocal(db)
 }
 
@@ -244,68 +267,116 @@ export async function upsertEntriesBulk(inputs: Omit<DailyEntry, 'id' | 'created
 /**
  * Takes parsed CSV rows for one client and reconciles them against existing
  * campaigns/ad sets/ads by name (creating whatever doesn't exist yet), then
- * writes all the daily entries. Returns a summary for the import confirmation UI.
+ * writes daily entries.
+ *
+ * Two rules this enforces:
+ *  1. "First active" date = the EARLIEST date seen for that ad across the
+ *     whole import (not just whichever row happened to come first in the
+ *     file) — and if a later import reveals an even earlier date for an ad
+ *     that already exists, its first_active_date is backfilled.
+ *  2. A date that already has an entry for that ad is left untouched —
+ *     re-uploading a CSV that overlaps previous uploads only fills in the
+ *     NEW dates, it never overwrites a day you already have.
  */
 export async function importParsedRows(
   clientId: string,
   rows: ParsedRow[],
-): Promise<{ campaignsCreated: number; adSetsCreated: number; adsCreated: number; entriesWritten: number }> {
+): Promise<{
+  campaignsCreated: number
+  adSetsCreated: number
+  adsCreated: number
+  entriesWritten: number
+  duplicatesSkipped: number
+}> {
   const existingCampaigns = await listCampaigns(clientId)
   const campaignByName = new Map(existingCampaigns.map((c) => [c.name, c]))
   let campaignsCreated = 0
   let adSetsCreated = 0
   let adsCreated = 0
+  let duplicatesSkipped = 0
+
+  // Group rows by campaign/ad set/ad so each ad's earliest date across the
+  // whole import is known before that ad is created or backfilled.
+  interface Group {
+    campaignName: string
+    adSetName: string
+    adName: string
+    rows: ParsedRow[]
+    minDate: string
+  }
+  const groups = new Map<string, Group>()
+  for (const row of rows) {
+    const key = `${row.campaignName}|||${row.adSetName}|||${row.adName}`
+    const g = groups.get(key)
+    if (!g) {
+      groups.set(key, { campaignName: row.campaignName, adSetName: row.adSetName, adName: row.adName, rows: [row], minDate: row.date })
+    } else {
+      g.rows.push(row)
+      if (row.date < g.minDate) g.minDate = row.date
+    }
+  }
 
   const adSetByKey = new Map<string, AdSet>() // key: campaignId|adSetName
-  const adByKey = new Map<string, Ad>() // key: adSetId|adName
+  const resolvedAds: { ad: Ad; rows: ParsedRow[] }[] = []
 
-  const entries: Omit<DailyEntry, 'id' | 'created_at'>[] = []
-
-  for (const row of rows) {
-    let campaign = campaignByName.get(row.campaignName)
+  for (const group of groups.values()) {
+    let campaign = campaignByName.get(group.campaignName)
     if (!campaign) {
-      campaign = await createCampaign({ client_id: clientId, name: row.campaignName })
-      campaignByName.set(row.campaignName, campaign)
+      campaign = await createCampaign({ client_id: clientId, name: group.campaignName })
+      campaignByName.set(group.campaignName, campaign)
       campaignsCreated++
     }
 
-    const adSetKey = `${campaign.id}|${row.adSetName}`
+    const adSetKey = `${campaign.id}|${group.adSetName}`
     let adSet = adSetByKey.get(adSetKey)
     if (!adSet) {
-      const existing = (await listAdSets(campaign.id)).find((a) => a.name === row.adSetName)
-      adSet = existing ?? (await createAdSet({ campaign_id: campaign.id, name: row.adSetName }))
+      const existing = (await listAdSets(campaign.id)).find((a) => a.name === group.adSetName)
+      adSet = existing ?? (await createAdSet({ campaign_id: campaign.id, name: group.adSetName }))
       if (!existing) adSetsCreated++
       adSetByKey.set(adSetKey, adSet)
     }
 
-    const adKey = `${adSet.id}|${row.adName}`
-    let ad = adByKey.get(adKey)
-    if (!ad) {
-      const existing = (await listAds(adSet.id)).find((a) => a.name === row.adName)
-      ad =
-        existing ??
-        (await createAd({
-          ad_set_id: adSet.id,
-          name: row.adName,
-          first_active_date: row.date,
-        }))
-      if (!existing) adsCreated++
-      adByKey.set(adKey, ad)
+    const existingAd = (await listAds(adSet.id)).find((a) => a.name === group.adName)
+    let ad: Ad
+    if (!existingAd) {
+      ad = await createAd({ ad_set_id: adSet.id, name: group.adName, first_active_date: group.minDate })
+      adsCreated++
+    } else {
+      ad = existingAd
+      if (group.minDate < ad.first_active_date) {
+        await updateAdFields(ad.id, { first_active_date: group.minDate })
+        ad = { ...ad, first_active_date: group.minDate }
+      }
     }
 
-    entries.push({
-      ad_id: ad.id,
-      date: row.date,
-      spend: row.spend,
-      results: row.results,
-      clicks: row.clicks,
-      impressions: row.impressions,
-      landing_page_views: row.landingPageViews,
-      frequency: row.frequency,
-    })
+    resolvedAds.push({ ad, rows: group.rows })
+  }
+
+  // Only write entries for dates that don't already exist for that ad.
+  const existingEntriesByAd = await listAllEntriesForAds(resolvedAds.map((r) => r.ad.id))
+  const entries: Omit<DailyEntry, 'id' | 'created_at'>[] = []
+
+  for (const { ad, rows: adRows } of resolvedAds) {
+    const existingDates = new Set((existingEntriesByAd[ad.id] ?? []).map((e) => e.date))
+    for (const row of adRows) {
+      if (existingDates.has(row.date)) {
+        duplicatesSkipped++
+        continue
+      }
+      entries.push({
+        ad_id: ad.id,
+        date: row.date,
+        spend: row.spend,
+        results: row.results,
+        clicks: row.clicks,
+        impressions: row.impressions,
+        landing_page_views: row.landingPageViews,
+        frequency: row.frequency,
+      })
+    }
   }
 
   await upsertEntriesBulk(entries)
 
-  return { campaignsCreated, adSetsCreated, adsCreated, entriesWritten: entries.length }
+  return { campaignsCreated, adSetsCreated, adsCreated, entriesWritten: entries.length, duplicatesSkipped }
 }

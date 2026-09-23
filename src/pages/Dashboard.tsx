@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import type { Ad, AdMetrics, AdSet, Campaign, Client, DailyEntry } from '../lib/types'
-import { listAllAdsForClient, listAllEntriesForAds } from '../lib/store'
-import { buildAdMetrics } from '../lib/metrics'
+import { listAllAdsForClient, listAllEntriesForAds, updateAdSetNotes } from '../lib/store'
+import { buildAdMetrics, mergeEntriesByDate } from '../lib/metrics'
 import { CplBadge, ActionBadge } from '../components/StatusBadge'
 import { AdDetailPanel } from '../components/AdDetailPanel'
 import { RecommendationsPanel } from '../components/RecommendationsPanel'
+import { CplSparkline } from '../components/Sparkline'
+import { NotesField } from '../components/NotesField'
 
 export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: number }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -142,6 +144,9 @@ export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: 
                 ? 'watch'
                 : 'good'
             const expanded = expandedAdSetId === set.id
+            const activeSetMetrics = setAdMetrics.filter((m) => m.ad.status === 'active')
+            const standouts = activeSetMetrics.filter((m) => m.recommendation.action !== 'keep' && m.recommendation.action !== 'monitor')
+            const aggregateEntries = mergeEntriesByDate(setAdMetrics.flatMap((m) => m.entries))
 
             return (
               <div key={set.id} className="border-b border-border">
@@ -175,47 +180,96 @@ export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: 
                 </button>
 
                 {expanded && (
-                  <table className="w-full text-sm">
-                    <thead className="text-text-faint text-[11px] uppercase tracking-wider bg-surface-2/40 sticky top-0">
-                      <tr>
-                        <th className="text-left pl-11 pr-2 py-2 font-semibold">Ad</th>
-                        <th className="text-right px-2 py-2 font-semibold">Days</th>
-                        <th className="text-right px-2 py-2 font-semibold">Spend</th>
-                        <th className="text-right px-2 py-2 font-semibold">Leads</th>
-                        <th className="text-right px-2 py-2 font-semibold">CPL</th>
-                        <th className="text-right px-2 pr-4 py-2 font-semibold">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {setAdMetrics.map((m, i) => (
-                        <tr
-                          key={m.ad.id}
-                          onClick={() => setSelectedAdId(m.ad.id)}
-                          className={clsx(
-                            'cursor-pointer border-t border-border/60 transition-colors hover:bg-surface-2/70',
-                            i % 2 === 1 && 'bg-surface-2/20',
-                            selectedAdId === m.ad.id && 'bg-accent-bg hover:bg-accent-bg',
-                          )}
-                        >
-                          <td className="pl-11 pr-2 py-2 truncate max-w-[260px]">
-                            {m.ad.name}
-                            {m.ad.status !== 'active' && (
-                              <span className="ml-2 text-[10px] text-text-faint uppercase font-semibold">{m.ad.status}</span>
+                  <>
+                    {/* Ad set summary: notes, standout recommendations, aggregate trend */}
+                    <div className="px-4 pb-4 pt-1 bg-surface-2/20 border-t border-border/40">
+                      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 pt-3">
+                        <div className="flex flex-col gap-3 min-w-0">
+                          <div>
+                            <div className="text-[10px] text-text-faint uppercase tracking-wider font-semibold mb-1.5">About this ad set</div>
+                            <NotesField
+                              value={set.notes}
+                              placeholder="What's this ad set testing? (audience, hook angle, offer…)"
+                              onSave={async (notes) => {
+                                await updateAdSetNotes(set.id, notes)
+                                load()
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-text-faint uppercase tracking-wider font-semibold mb-1.5">Ad set summary</div>
+                            {standouts.length === 0 ? (
+                              <div className="text-xs text-text-faint px-1">No standout ads yet — everything's within range, or it's too early to call.</div>
+                            ) : (
+                              <div className="flex flex-col gap-1">
+                                {standouts.map((m) => (
+                                  <button
+                                    key={m.ad.id}
+                                    onClick={() => setSelectedAdId(m.ad.id)}
+                                    className="flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-surface-2 transition-colors"
+                                  >
+                                    <ActionBadge action={m.recommendation.action} />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-xs font-semibold truncate">{m.ad.name}</div>
+                                      <div className="text-[11px] text-text-faint leading-snug">{m.recommendation.reason}</div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
                             )}
-                          </td>
-                          <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.daysActive}</td>
-                          <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.totalSpend.toFixed(2)}</td>
-                          <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.totalResults}</td>
-                          <td className="text-right px-2 py-2">
-                            <CplBadge cpl={m.cpl} flag={m.flag} currency={client.currency} />
-                          </td>
-                          <td className="text-right px-2 pr-4 py-2">
-                            <ActionBadge action={m.recommendation.action} />
-                          </td>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-text-faint uppercase tracking-wider font-semibold mb-1.5">Ad set CPL trend</div>
+                          <div className="rounded-xl border border-border bg-surface-2/60 p-2">
+                            <CplSparkline entries={aggregateEntries} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <table className="w-full text-sm">
+                      <thead className="text-text-faint text-[11px] uppercase tracking-wider bg-surface-2/40 sticky top-0">
+                        <tr>
+                          <th className="text-left pl-11 pr-2 py-2 font-semibold">Ad</th>
+                          <th className="text-right px-2 py-2 font-semibold">Days</th>
+                          <th className="text-right px-2 py-2 font-semibold">Spend</th>
+                          <th className="text-right px-2 py-2 font-semibold">Leads</th>
+                          <th className="text-right px-2 py-2 font-semibold">CPL</th>
+                          <th className="text-right px-2 pr-4 py-2 font-semibold">Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {setAdMetrics.map((m, i) => (
+                          <tr
+                            key={m.ad.id}
+                            onClick={() => setSelectedAdId(m.ad.id)}
+                            className={clsx(
+                              'cursor-pointer border-t border-border/60 transition-colors hover:bg-surface-2/70',
+                              i % 2 === 1 && 'bg-surface-2/20',
+                              selectedAdId === m.ad.id && 'bg-accent-bg hover:bg-accent-bg',
+                            )}
+                          >
+                            <td className="pl-11 pr-2 py-2 truncate max-w-[260px]">
+                              {m.ad.name}
+                              {m.ad.status !== 'active' && (
+                                <span className="ml-2 text-[10px] text-text-faint uppercase font-semibold">{m.ad.status}</span>
+                              )}
+                            </td>
+                            <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.daysActive}</td>
+                            <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.totalSpend.toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.totalResults}</td>
+                            <td className="text-right px-2 py-2">
+                              <CplBadge cpl={m.cpl} flag={m.flag} currency={client.currency} />
+                            </td>
+                            <td className="text-right px-2 pr-4 py-2">
+                              <ActionBadge action={m.recommendation.action} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
                 )}
               </div>
             )

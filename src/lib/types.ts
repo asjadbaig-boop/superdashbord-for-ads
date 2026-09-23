@@ -22,6 +22,7 @@ export interface AdSet {
   campaign_id: string
   name: string
   daily_budget: number | null
+  notes: string | null // free text — what this ad set is testing / about
   created_at: string
 }
 
@@ -29,8 +30,9 @@ export interface Ad {
   id: string
   ad_set_id: string
   name: string
-  first_active_date: string // YYYY-MM-DD, used for "days active"
+  first_active_date: string // YYYY-MM-DD, used for "days active" — earliest date seen across all imports
   status: 'active' | 'paused' | 'killed'
+  notes: string | null // free text — what this creative/ad is about
   created_at: string
 }
 

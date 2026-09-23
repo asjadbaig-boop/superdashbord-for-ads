@@ -28,6 +28,29 @@ export function cplTrend(entries: DailyEntry[]): 'down' | 'up' | 'flat' | 'unkno
   return 'flat'
 }
 
+/**
+ * Merges entries from multiple ads (an ad set's worth) into one entry per
+ * calendar date — summing spend/results/clicks/impressions/LPV and
+ * averaging frequency. Used to draw an ad-set-level CPL trend chart.
+ */
+export function mergeEntriesByDate(entries: DailyEntry[]): DailyEntry[] {
+  const byDate = new Map<string, DailyEntry>()
+  for (const e of entries) {
+    const existing = byDate.get(e.date)
+    if (!existing) {
+      byDate.set(e.date, { ...e, id: e.date, ad_id: 'aggregate' })
+    } else {
+      existing.spend += e.spend
+      existing.results += e.results
+      existing.clicks += e.clicks
+      existing.impressions += e.impressions
+      existing.landing_page_views += e.landing_page_views
+      existing.frequency = e.frequency != null ? (existing.frequency != null ? (existing.frequency + e.frequency) / 2 : e.frequency) : existing.frequency
+    }
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
+
 export function flagForCpl(cpl: number | null, client: Client): FlagLevel {
   if (cpl === null) return 'kill' // zero results after spend is a red flag by default
   if (cpl <= client.cpl_good_max) return 'good'

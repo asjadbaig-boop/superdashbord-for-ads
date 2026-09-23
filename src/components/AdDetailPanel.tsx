@@ -1,7 +1,8 @@
 import type { AdMetrics, Client } from '../lib/types'
 import { ActionBadge, CplBadge } from './StatusBadge'
 import { CplSparkline } from './Sparkline'
-import { setAdStatus } from '../lib/store'
+import { updateAdFields } from '../lib/store'
+import { NotesField } from './NotesField'
 
 export function AdDetailPanel({
   metrics,
@@ -31,11 +32,6 @@ export function AdDetailPanel({
 
   const { ad, daysActive, totalSpend, totalResults, cpl, ctr, lpConvRate, avgFrequency, flag, recommendation, entries } = metrics
 
-  async function act(status: 'paused' | 'killed' | 'active') {
-    await setAdStatus(ad.id, status)
-    onChanged()
-  }
-
   return (
     <div className="p-5 flex flex-col gap-5 h-full overflow-y-auto">
       <div>
@@ -47,6 +43,7 @@ export function AdDetailPanel({
       </div>
 
       <div className="rounded-xl border border-border bg-surface-2/60 p-3.5 text-sm leading-relaxed text-text-dim">
+        <div className="text-[10px] text-text-faint uppercase tracking-wider font-semibold mb-1.5">Auto summary</div>
         {recommendation.reason}
       </div>
 
@@ -68,25 +65,16 @@ export function AdDetailPanel({
         </div>
       </div>
 
-      <div className="flex gap-2 mt-auto pt-2 sticky bottom-0">
-        <button
-          onClick={() => act('active')}
-          className="flex-1 rounded-lg border border-good/30 bg-good-bg text-good text-sm font-semibold py-2.5 transition-all hover:bg-good/20 hover:border-good/50 active:scale-[0.98]"
-        >
-          Scale / Keep
-        </button>
-        <button
-          onClick={() => act('paused')}
-          className="flex-1 rounded-lg border border-watch/30 bg-watch-bg text-watch text-sm font-semibold py-2.5 transition-all hover:bg-watch/20 hover:border-watch/50 active:scale-[0.98]"
-        >
-          Pause
-        </button>
-        <button
-          onClick={() => act('killed')}
-          className="flex-1 rounded-lg border border-kill/30 bg-kill-bg text-kill text-sm font-semibold py-2.5 transition-all hover:bg-kill/20 hover:border-kill/50 active:scale-[0.98]"
-        >
-          Close
-        </button>
+      <div>
+        <div className="text-[11px] text-text-faint uppercase tracking-wider font-semibold mb-2">Notes</div>
+        <NotesField
+          value={ad.notes}
+          placeholder="What's this creative about, what's being tested…"
+          onSave={async (notes) => {
+            await updateAdFields(ad.id, { notes })
+            onChanged()
+          }}
+        />
       </div>
     </div>
   )

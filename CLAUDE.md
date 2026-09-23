@@ -11,13 +11,13 @@ Meta Ads management dashboard for AdsByAsjad. Client-specific hierarchy: Campaig
 - Deployed on Vercel, repo on GitHub (`asjadbaig-boop/superdashbord-for-ads`)
 
 ## Architecture
-- `src/lib/types.ts` — core data shapes (Client, Campaign, AdSet, Ad, DailyEntry) + derived metrics shapes (AdMetrics, Recommendation, FlagLevel)
-- `src/lib/metrics.ts` — recommendation engine (kill/scale/review/monitor logic, CPL trend, flag thresholds)
-- `src/lib/store.ts` — data layer, dual backend (Supabase when env vars present, else localStorage)
+- `src/lib/types.ts` — core data shapes (Client, Campaign, AdSet, Ad, DailyEntry — AdSet and Ad both carry a `notes: string | null` free-text field) + derived metrics shapes (AdMetrics, Recommendation, FlagLevel)
+- `src/lib/metrics.ts` — recommendation engine (kill/scale/review/monitor logic, CPL trend, flag thresholds) + `mergeEntriesByDate()` which collapses multiple ads' entries into one per-date series for ad-set-level trend charts
+- `src/lib/store.ts` — data layer, dual backend (Supabase when env vars present, else localStorage). `importParsedRows()` groups CSV rows per ad first so it can resolve each ad's true earliest date before creating/backfilling it, and only writes entries for dates that don't already exist (re-uploads never overwrite a day you already have)
 - `src/lib/csvParser.ts` — Meta Ads Manager CSV/paste parser with column-alias matching
 - `src/lib/supabase.ts` — Supabase client init, `supabaseConfigured` flag
-- `src/pages/Dashboard.tsx` — main 3-column view (campaigns → ad sets/ads → detail panel) + recommendations strip
-- `src/components/` — StatusBadge, Sparkline, AdDetailPanel, RecommendationsPanel, DataImport, ManualEntryGrid, ClientSettings
+- `src/pages/Dashboard.tsx` — main 3-column view (campaigns → ad sets/ads → detail panel) + recommendations strip. Expanding an ad set also shows its notes, a mini "which ads to scale/pause/close and why" summary, and an ad-set-level CPL trend chart
+- `src/components/` — StatusBadge, Sparkline, AdDetailPanel, RecommendationsPanel, DataImport, ManualEntryGrid, ClientSettings, NotesField (auto-saving textarea used for ad set / ad notes)
 - `src/App.tsx` — shell: header, client picker, tab nav
 
 ## Design System (applied 2026-09-23)
@@ -35,12 +35,19 @@ Meta Ads management dashboard for AdsByAsjad. Client-specific hierarchy: Campaig
 **Conventions**:
 - All colors are Tailwind tokens (`bg-surface`, `text-good`, `border-border`, etc.) — never raw hex in components
 - Cards/panels: `rounded-xl` or `rounded-lg`, `border border-border`, `bg-surface-2/60`
-- Buttons: `rounded-lg`, semantic color per action (accent = primary, good/watch/kill = scale/pause/close), `active:scale-[0.98]` press feedback
+- Buttons: `rounded-lg`, semantic color per action, `active:scale-[0.98]` press feedback
 - Status always paired with an icon/dot + text, never color alone (accessibility)
 - `prefers-reduced-motion` respected globally in `index.css`
 - Focus rings visible on all interactive elements (`*:focus-visible`)
 
 ## Change Log
+- **2026-09-23 (2)** — Import/data-model fixes + ad-set-level views:
+  - Fixed a layout bug where the Scale/Pause/Close buttons on `AdDetailPanel` overlapped the stats grid. Removed those buttons for now (not needed day-to-day) — status is still changed by re-uploading data or, if needed later, a future dropdown.
+  - `Ad.first_active_date` is now the true earliest date seen for that ad across an import (grouped per-ad before resolving), not just whichever CSV row happened to come first. If a later upload reveals an even earlier date for an ad that already exists, its `first_active_date` is backfilled.
+  - CSV import no longer overwrites a date that already has an entry for an ad — only genuinely new dates get written. `importParsedRows()` now also returns `duplicatesSkipped`.
+  - Added `notes` (free text) to both `AdSet` and `Ad` — editable via a small auto-saving textarea (`NotesField`), for "what is this ad set testing" / "what's this creative about."
+  - Expanding an ad set on the Dashboard now shows: its notes, a mini recommendations summary (which ads in that set should scale/pause/close and why), and an ad-set-level CPL trend chart aggregating all its ads (`mergeEntriesByDate`).
+  - Supabase schema updated: `notes text` column added to `ad_sets` and `ads`. **Action needed**: run the migration block at the bottom of `supabase/schema.sql` in the Supabase SQL editor (`alter table ad_sets/ads add column if not exists notes text;`) since the live database predates this change.
 - **2026-09-23** — Complete UI overhaul: new dark color system, Plus Jakarta Sans typography, restyled every component (header/nav, campaign sidebar, ad table, detail panel, recommendations, CSV import, manual entry grid, client settings). Added account-level summary strip (active ads / spend / leads / blended CPL / to-close / to-scale counts) to Dashboard. No changes to data logic, types, or the recommendation engine — visual layer only.
 - **2026-09-22** — Vercel + Supabase connected. Fixed env vars not picked up on Production (Vite bakes `VITE_` vars at build time — had to add vars scoped to Production and redeploy without build cache).
 - **2026-09-21** — Initial build: full app scaffolded (types, metrics engine, store with Supabase/localStorage dual backend, CSV import, manual entry, dashboard UI), pushed to GitHub, Supabase schema created with open RLS policies (no-auth single-user tool).

@@ -25,6 +25,7 @@ create table if not exists ad_sets (
   campaign_id uuid not null references campaigns(id) on delete cascade,
   name text not null,
   daily_budget numeric,
+  notes text,
   created_at timestamptz not null default now()
 );
 
@@ -34,6 +35,7 @@ create table if not exists ads (
   name text not null,
   first_active_date date not null default current_date,
   status text not null default 'active' check (status in ('active','paused','killed')),
+  notes text,
   created_at timestamptz not null default now()
 );
 
@@ -70,3 +72,9 @@ create policy "anon full access" on campaigns for all using (true) with check (t
 create policy "anon full access" on ad_sets for all using (true) with check (true);
 create policy "anon full access" on ads for all using (true) with check (true);
 create policy "anon full access" on daily_entries for all using (true) with check (true);
+
+-- Migration (2026-09-23): added `notes` to ad_sets/ads after the initial
+-- schema above was already live. Safe to re-run; the create table
+-- statements above won't touch existing tables.
+alter table ad_sets add column if not exists notes text;
+alter table ads add column if not exists notes text;
