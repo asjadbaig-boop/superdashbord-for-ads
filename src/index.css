@@ -1,13 +1,16 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0b0c0f;
-  --color-surface: #14161b;
-  --color-surface-2: #1c1f26;
-  --color-border: #2a2d35;
-  --color-text: #e5e7eb;
-  --color-text-dim: #9ca3af;
-  --color-text-faint: #6b7280;
+  --color-bg: #020617;
+  --color-surface: #0e1223;
+  --color-surface-2: #1a1e2f;
+  --color-surface-3: #232840;
+  --color-border: #2a3247;
+  --color-border-strong: #384259;
+  --color-text: #f8fafc;
+  --color-text-dim: #cbd5e1;
+  --color-text-faint: #8b96ab;
 
   --color-good: #22c55e;
   --color-good-bg: rgba(34, 197, 94, 0.12);
@@ -15,7 +18,12 @@
   --color-watch-bg: rgba(245, 158, 11, 0.12);
   --color-kill: #ef4444;
   --color-kill-bg: rgba(239, 68, 68, 0.12);
+
   --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-bg: rgba(99, 102, 241, 0.12);
+
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 html {
@@ -25,8 +33,13 @@ html {
 body {
   margin: 0;
   background: var(--color-bg);
+  background-image:
+    radial-gradient(circle at 12% -10%, rgba(99, 102, 241, 0.12), transparent 42%),
+    radial-gradient(circle at 90% 0%, rgba(34, 197, 94, 0.06), transparent 38%);
+  background-attachment: fixed;
   color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: 'tnum' 1;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -34,11 +47,42 @@ body {
   box-sizing: border-box;
 }
 
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button,
+[role='button'] {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: var(--color-border-strong);
   border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

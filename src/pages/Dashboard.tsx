@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import type { Ad, AdMetrics, AdSet, Campaign, Client, DailyEntry } from '../lib/types'
 import { listAllAdsForClient, listAllEntriesForAds } from '../lib/store'
 import { buildAdMetrics } from '../lib/metrics'
-import { CplBadge } from '../components/StatusBadge'
+import { CplBadge, ActionBadge } from '../components/StatusBadge'
 import { AdDetailPanel } from '../components/AdDetailPanel'
 import { RecommendationsPanel } from '../components/RecommendationsPanel'
 
@@ -58,99 +58,196 @@ export function Dashboard({ client, refreshKey }: { client: Client; refreshKey: 
   const visibleAdSets = adSets.filter((s) => s.campaign_id === selectedCampaignId)
   const selectedAdMetrics = selectedAdId ? metricsByAdId.get(selectedAdId) ?? null : null
 
+  const accountTotals = useMemo(() => {
+    const active = allAdMetrics.filter((m) => m.ad.status === 'active')
+    const spend = active.reduce((s, m) => s + m.totalSpend, 0)
+    const results = active.reduce((s, m) => s + m.totalResults, 0)
+    const cpl = results > 0 ? spend / results : null
+    const closeCount = active.filter((m) => m.recommendation.action === 'close').length
+    const scaleCount = active.filter((m) => m.recommendation.action === 'scale').length
+    return { spend, results, cpl, activeCount: active.length, closeCount, scaleCount }
+  }, [allAdMetrics])
+
   if (loading) {
-    return <div className="p-8 text-text-faint text-sm">Loading…</div>
+    return (
+      <div className="p-8 text-text-faint text-sm flex items-center gap-2">
+        <span className="h-3.5 w-3.5 rounded-full border-2 border-text-faint border-t-transparent animate-spin" />
+        Loading…
+      </div>
+    )
   }
 
   if (campaigns.length === 0) {
     return (
       <div className="p-8 text-text-faint text-sm">
-        No data yet for {client.name}. Go to <span className="text-text">Import Data</span> to bring in a CSV, or{' '}
-        <span className="text-text">Manual Entry</span> once you've imported at least one ad set structure.
+        No data yet for {client.name}. Go to <span className="text-text font-medium">Import Data</span> to bring in a CSV, or{' '}
+        <span className="text-text font-medium">Manual Entry</span> once you've imported at least one ad set structure.
       </div>
     )
   }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border">
-        <RecommendationsPanel allAds={allAdMetrics} client={client} onSelectAd={setSelectedAdId} />
+      {/* Account summary strip */}
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0 overflow-x-auto">
+        <SummaryTile label="Active ads" value={String(accountTotals.activeCount)} />
+        <SummaryTile label="Total spend" value={`${client.currency} ${accountTotals.spend.toFixed(0)}`} />
+        <SummaryTile label="Leads" value={String(accountTotals.results)} />
+        <SummaryTile label="Blended CPL" value={accountTotals.cpl === null ? '—' : `${client.currency} ${accountTotals.cpl.toFixed(2)}`} />
+        <SummaryTile label="To close" value={String(accountTotals.closeCount)} tone={accountTotals.closeCount > 0 ? 'kill' : undefined} />
+        <SummaryTile label="To scale" value={String(accountTotals.scaleCount)} tone={accountTotals.scaleCount > 0 ? 'good' : undefined} />
       </div>
 
       <div className="flex flex-1 min-h-0">
         {/* Campaign level */}
-        <div className="w-56 border-r border-border shrink-0 overflow-y-auto">
-          <div className="px-3 py-2 text-xs uppercase tracking-wide text-text-faint">Campaigns</div>
-          {campaigns.map((c) => {
-            const camAds = allAdMetrics.filter((m) => adSets.find((s) => s.id === m.ad.ad_set_id)?.campaign_id === c.id)
-            const spend = camAds.reduce((s, m) => s + m.totalSpend, 0)
-            return (
-              <button
-                key={c.id}
-                onClick={() => {
-                  setSelectedCampaignId(c.id)
-                  setExpandedAdSetId(null)
-                }}
-                className={clsx(
-                  'w-full text-left px-3 py-2.5 border-b border-border/60 hover:bg-surface-2 transition-colors',
-                  selectedCampaignId === c.id && 'bg-surface-2',
-                )}
-              >
-                <div className="text-sm font-medium truncate">{c.name}</div>
-                <div className="text-xs text-text-faint mt-0.5 tabular-nums">
-                  {client.currency} {spend.toFixed(2)} · {camAds.length} ad{camAds.length === 1 ? '' : 's'}
-                </div>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Ad set / ad level */}
-        <div className="w-80 border-r border-border shrink-0 overflow-y-auto">
-          <div className="px-3 py-2 text-xs uppercase tracking-wide text-text-faint">Ad Sets</div>
-          {visibleAdSets.length === 0 && (
-            <div className="px-3 py-2 text-sm text-text-faint">No ad sets in this campaign yet.</div>
-          )}
-          {visibleAdSets.map((s) => {
-            const setAds = allAdMetrics.filter((m) => m.ad.ad_set_id === s.id)
-            const expanded = expandedAdSetId === s.id
-            return (
-              <div key={s.id} className="border-b border-border/60">
+        <div className="w-60 border-r border-border shrink-0 overflow-y-auto py-2">
+          <div className="px-3.5 py-1.5 text-[11px] uppercase tracking-wider font-semibold text-text-faint">Campaigns</div>
+          <div className="flex flex-col gap-1 px-2">
+            {campaigns.map((c) => {
+              const camAds = allAdMetrics.filter((m) => adSets.find((s) => s.id === m.ad.ad_set_id)?.campaign_id === c.id)
+              const spend = camAds.reduce((s, m) => s + m.totalSpend, 0)
+              const active = selectedCampaignId === c.id
+              return (
                 <button
-                  onClick={() => setExpandedAdSetId(expanded ? null : s.id)}
-                  className="w-full text-left px-3 py-2.5 hover:bg-surface-2 transition-colors"
+                  key={c.id}
+                  onClick={() => {
+                    setSelectedCampaignId(c.id)
+                    setExpandedAdSetId(null)
+                  }}
+                  className={clsx(
+                    'w-full text-left rounded-lg px-3 py-2.5 transition-colors',
+                    active ? 'bg-accent-bg border border-accent/30' : 'hover:bg-surface-2 border border-transparent',
+                  )}
                 >
-                  <div className="text-sm font-medium truncate">{s.name}</div>
-                  <div className="text-xs text-text-faint mt-0.5">
-                    {setAds.length} ad{setAds.length === 1 ? '' : 's'}
+                  <div className={clsx('text-sm font-semibold truncate', active && 'text-accent-hover')}>{c.name}</div>
+                  <div className="text-xs text-text-faint mt-0.5 tabular-nums">
+                    {client.currency} {spend.toFixed(0)} · {camAds.length} ads
                   </div>
                 </button>
-                {expanded && (
-                  <div className="pb-1">
-                    {setAds.map((m) => (
-                      <button
-                        key={m.ad.id}
-                        onClick={() => setSelectedAdId(m.ad.id)}
-                        className={clsx(
-                          'w-full flex items-center gap-2 text-left pl-5 pr-3 py-1.5 hover:bg-surface-2 transition-colors',
-                          selectedAdId === m.ad.id && 'bg-surface-2',
-                        )}
-                      >
-                        <span className="text-sm truncate flex-1">{m.ad.name}</span>
-                        <CplBadge cpl={m.cpl} flag={m.flag} currency={client.currency} />
-                      </button>
-                    ))}
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Ad set + ad level */}
+        <div className="flex-1 overflow-y-auto min-w-0">
+          {visibleAdSets.map((set) => {
+            const setAdMetrics = allAdMetrics.filter((m) => m.ad.ad_set_id === set.id)
+            const spend = setAdMetrics.reduce((s, m) => s + m.totalSpend, 0)
+            const results = setAdMetrics.reduce((s, m) => s + m.totalResults, 0)
+            const avgCpl = results > 0 ? spend / results : null
+            const worstFlag = setAdMetrics.some((m) => m.flag === 'kill')
+              ? 'kill'
+              : setAdMetrics.some((m) => m.flag === 'watch')
+                ? 'watch'
+                : 'good'
+            const expanded = expandedAdSetId === set.id
+
+            return (
+              <div key={set.id} className="border-b border-border">
+                <button
+                  onClick={() => setExpandedAdSetId(expanded ? null : set.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-2/60 transition-colors text-left"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className={clsx('shrink-0 text-text-faint transition-transform', expanded && 'rotate-90')}
+                  >
+                    <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span
+                    className={clsx(
+                      'h-2 w-2 rounded-full shrink-0',
+                      worstFlag === 'kill' ? 'bg-kill shadow-[0_0_6px] shadow-kill' : worstFlag === 'watch' ? 'bg-watch shadow-[0_0_6px] shadow-watch' : 'bg-good shadow-[0_0_6px] shadow-good',
+                    )}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{set.name}</div>
+                    <div className="text-xs text-text-faint mt-0.5">
+                      {set.daily_budget ? `${client.currency} ${set.daily_budget}/day · ` : ''}
+                      {setAdMetrics.length} ad{setAdMetrics.length === 1 ? '' : 's'}
+                    </div>
                   </div>
+                  <CplBadge cpl={avgCpl} flag={worstFlag} currency={client.currency} />
+                </button>
+
+                {expanded && (
+                  <table className="w-full text-sm">
+                    <thead className="text-text-faint text-[11px] uppercase tracking-wider bg-surface-2/40 sticky top-0">
+                      <tr>
+                        <th className="text-left pl-11 pr-2 py-2 font-semibold">Ad</th>
+                        <th className="text-right px-2 py-2 font-semibold">Days</th>
+                        <th className="text-right px-2 py-2 font-semibold">Spend</th>
+                        <th className="text-right px-2 py-2 font-semibold">Leads</th>
+                        <th className="text-right px-2 py-2 font-semibold">CPL</th>
+                        <th className="text-right px-2 pr-4 py-2 font-semibold">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {setAdMetrics.map((m, i) => (
+                        <tr
+                          key={m.ad.id}
+                          onClick={() => setSelectedAdId(m.ad.id)}
+                          className={clsx(
+                            'cursor-pointer border-t border-border/60 transition-colors hover:bg-surface-2/70',
+                            i % 2 === 1 && 'bg-surface-2/20',
+                            selectedAdId === m.ad.id && 'bg-accent-bg hover:bg-accent-bg',
+                          )}
+                        >
+                          <td className="pl-11 pr-2 py-2 truncate max-w-[260px]">
+                            {m.ad.name}
+                            {m.ad.status !== 'active' && (
+                              <span className="ml-2 text-[10px] text-text-faint uppercase font-semibold">{m.ad.status}</span>
+                            )}
+                          </td>
+                          <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.daysActive}</td>
+                          <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.totalSpend.toFixed(2)}</td>
+                          <td className="text-right px-2 py-2 tabular-nums text-text-dim">{m.totalResults}</td>
+                          <td className="text-right px-2 py-2">
+                            <CplBadge cpl={m.cpl} flag={m.flag} currency={client.currency} />
+                          </td>
+                          <td className="text-right px-2 pr-4 py-2">
+                            <ActionBadge action={m.recommendation.action} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             )
           })}
         </div>
 
-        {/* Detail panel */}
-        <div className="flex-1 min-w-0 overflow-y-auto">
+        {/* Ad detail panel */}
+        <div className="w-80 border-l border-border shrink-0 overflow-y-auto bg-surface/40">
           <AdDetailPanel metrics={selectedAdMetrics} client={client} onChanged={load} />
         </div>
+      </div>
+
+      {/* Recommendations */}
+      <div className="border-t border-border shrink-0 max-h-56 overflow-y-auto bg-surface/40">
+        <div className="px-4 pt-2.5 text-[11px] uppercase tracking-wider font-semibold text-text-faint">Recommendations</div>
+        <RecommendationsPanel allAds={allAdMetrics} client={client} onSelectAd={setSelectedAdId} />
+      </div>
+    </div>
+  )
+}
+
+function SummaryTile({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'kill' }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface-2/60 px-4 py-2 shrink-0 min-w-[104px]">
+      <div className="text-[10px] text-text-faint uppercase tracking-wider font-semibold">{label}</div>
+      <div
+        className={clsx(
+          'text-base font-bold tabular-nums mt-0.5',
+          tone === 'good' ? 'text-good' : tone === 'kill' ? 'text-kill' : 'text-text',
+        )}
+      >
+        {value}
       </div>
     </div>
   )

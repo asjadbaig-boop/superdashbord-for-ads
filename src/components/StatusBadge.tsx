@@ -9,7 +9,12 @@ const FLAG_STYLES: Record<FlagLevel, string> = {
 
 export function FlagDot({ flag }: { flag: FlagLevel }) {
   const color = flag === 'good' ? 'bg-good' : flag === 'watch' ? 'bg-watch' : 'bg-kill'
-  return <span className={clsx('inline-block h-2.5 w-2.5 rounded-full shrink-0', color)} />
+  return (
+    <span className="relative inline-flex h-2.5 w-2.5 shrink-0">
+      <span className={clsx('absolute inline-flex h-full w-full rounded-full opacity-60', color)} />
+      <span className={clsx('relative inline-flex h-2.5 w-2.5 rounded-full', color)} />
+    </span>
+  )
 }
 
 const ACTION_LABEL: Record<RecommendationAction, string> = {
@@ -24,13 +29,18 @@ const ACTION_STYLE: Record<RecommendationAction, string> = {
   scale: 'bg-good-bg text-good border-good/30',
   close: 'bg-kill-bg text-kill border-kill/30',
   review: 'bg-watch-bg text-watch border-watch/30',
-  monitor: 'bg-surface-2 text-text-dim border-border',
-  keep: 'bg-surface-2 text-text-dim border-border',
+  monitor: 'bg-surface-3 text-text-dim border-border-strong',
+  keep: 'bg-surface-3 text-text-dim border-border-strong',
 }
 
 export function ActionBadge({ action }: { action: RecommendationAction }) {
   return (
-    <span className={clsx('inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium', ACTION_STYLE[action])}>
+    <span
+      className={clsx(
+        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
+        ACTION_STYLE[action],
+      )}
+    >
       {ACTION_LABEL[action]}
     </span>
   )
@@ -38,7 +48,12 @@ export function ActionBadge({ action }: { action: RecommendationAction }) {
 
 export function CplBadge({ cpl, flag, currency }: { cpl: number | null; flag: FlagLevel; currency: string }) {
   return (
-    <span className={clsx('inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-semibold tabular-nums', FLAG_STYLES[flag])}>
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold tabular-nums',
+        FLAG_STYLES[flag],
+      )}
+    >
       <FlagDot flag={flag} />
       {cpl === null ? '—' : `${currency} ${cpl.toFixed(2)}`}
     </span>

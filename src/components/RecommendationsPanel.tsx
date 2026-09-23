@@ -17,14 +17,14 @@ export function RecommendationsPanel({
 
   if (close.length === 0 && review.length === 0 && scale.length === 0) {
     return (
-      <div className="text-sm text-text-faint px-4 py-3">
+      <div className="text-sm text-text-faint px-4 py-4">
         No standout recommendations yet — need a few more days of data.
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-1 px-2 py-2">
+    <div className="flex flex-col gap-0.5 px-2 py-2">
       {close.map((m) => (
         <Row key={m.ad.id} m={m} client={client} onSelectAd={onSelectAd} />
       ))}
@@ -42,7 +42,7 @@ function Row({ m, client, onSelectAd }: { m: AdMetrics; client: Client; onSelect
   return (
     <button
       onClick={() => onSelectAd(m.ad.id)}
-      className="flex items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-surface-2 transition-colors"
+      className="flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-2 transition-colors"
     >
       <ActionBadge action={m.recommendation.action} />
       <span className="text-sm font-medium truncate flex-1">{m.ad.name}</span>
