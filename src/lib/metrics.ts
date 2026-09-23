@@ -59,9 +59,12 @@ export function flagForCpl(cpl: number | null, client: Client): FlagLevel {
 }
 
 /**
- * Core recommendation logic — mirrors the kill/scale/review rules from the
- * meta-ads-analyzer workflow: relative-to-best-performer kill threshold,
- * zero-result-after-spend kill, frequency fatigue, and CPL trend for scale.
+ * Core recommendation logic — kill/scale/review rules from the
+ * meta-ads-analyzer workflow. Currently relies only on the absolute kill
+ * threshold set per client (Watch ceiling in Client Settings), frequency
+ * fatigue, and CPL trend for scale. The relative-to-best-performer and
+ * zero-results-after-2x-spend kill rules are intentionally disabled for now
+ * (2026-09-23) — see CLAUDE.md change log.
  */
 export function recommend(params: {
   ad: Ad
@@ -69,7 +72,7 @@ export function recommend(params: {
   client: Client
   bestCplInAccount: number | null
 }): Recommendation {
-  const { ad, entries, client, bestCplInAccount } = params
+  const { ad, entries, client } = params
   const spend = sum(entries, 'spend')
   const results = sum(entries, 'results')
   const cpl = results > 0 ? spend / results : null
@@ -86,24 +89,6 @@ export function recommend(params: {
 
   if (spend === 0) {
     return { action: 'review', reason: 'No spend recorded yet — check delivery in Ads Manager.' }
-  }
-
-  // Zero results after spending 2x the client's "good" CPL target
-  if (results === 0 && spend >= client.cpl_good_max * 2) {
-    return {
-      action: 'close',
-      reason: `$${spend.toFixed(2)} spent with zero results — over 2x your target CPL with nothing to show.`,
-    }
-  }
-
-  // Relative kill: 3x+ the best performer in the account
-  if (cpl !== null && bestCplInAccount !== null && bestCplInAccount > 0) {
-    if (cpl >= bestCplInAccount * 3) {
-      return {
-        action: 'close',
-        reason: `CPL $${cpl.toFixed(2)} is ${(cpl / bestCplInAccount).toFixed(1)}x your best-performing ad ($${bestCplInAccount.toFixed(2)}).`,
-      }
-    }
   }
 
   // Absolute kill threshold from client settings

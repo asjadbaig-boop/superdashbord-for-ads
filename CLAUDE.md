@@ -41,6 +41,7 @@ Meta Ads management dashboard for AdsByAsjad. Client-specific hierarchy: Campaig
 - Focus rings visible on all interactive elements (`*:focus-visible`)
 
 ## Change Log
+- **2026-09-23 (3)** — Recommendation engine simplified: disabled the "3x your best-performing ad in the account" relative kill rule and the "zero results after spending 2x your good-CPL target" rule. Both were producing close calls the user didn't want right now (e.g. "27.9x your best ad" felt too aggressive/opaque). `recommend()` in `src/lib/metrics.ts` now relies only on: the absolute kill threshold (Client Settings → Watch ceiling), frequency fatigue (>2.5), CPL trend for scale/review, and the insufficient-data monitor case. `bestCplInAccount` is still threaded through `buildAdMetrics`/`Dashboard.tsx` (harmless, unused) in case the relative-kill rule is turned back on later — nothing else changed.
 - **2026-09-23 (2)** — Import/data-model fixes + ad-set-level views:
   - Fixed a layout bug where the Scale/Pause/Close buttons on `AdDetailPanel` overlapped the stats grid. Removed those buttons for now (not needed day-to-day) — status is still changed by re-uploading data or, if needed later, a future dropdown.
   - `Ad.first_active_date` is now the true earliest date seen for that ad across an import (grouped per-ad before resolving), not just whichever CSV row happened to come first. If a later upload reveals an even earlier date for an ad that already exists, its `first_active_date` is backfilled.
